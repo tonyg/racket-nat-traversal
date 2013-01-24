@@ -1,5 +1,5 @@
 PLANET_MAJOR=1
-PLANET_MINOR=0
+PLANET_MINOR=1
 PLANET_VERSION=$(PLANET_MAJOR).$(PLANET_MINOR)
 PLANET_NAME=nat-pmp
 
@@ -26,3 +26,6 @@ link:
 
 unlink:
 	raco planet unlink tonyg $(PLANET_NAME).plt $(PLANET_MAJOR) $(PLANET_MINOR)
+
+tag:
+	git tag $(PLANET_NAME).plt-${PLANET_VERSION}

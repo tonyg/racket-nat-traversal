@@ -60,9 +60,14 @@
 (define nat-pmp-logger (make-parameter (make-logger #f #f)))
 
 (define (gateway-ip-address)
-  (string-trim
-   (with-output-to-string
-     (lambda () (system "netstat -rn | grep '^default' | awk '{print $2}'")))))
+  (define r
+    (findf
+     (lambda (r) (and (pair? r) (member (car r) '("default" "0.0.0.0"))))
+     (map string-split
+	  (string-split (with-output-to-string (lambda () (system "netstat -rn"))) "\n"))))
+  (when (not r)
+    (error 'nat-pmp "Cannot determine gateway IP address"))
+  (cadr r))
 
 (define (check-result-code! code)
   (if (zero? code)
