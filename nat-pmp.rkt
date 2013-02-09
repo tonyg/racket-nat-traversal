@@ -20,11 +20,10 @@
 
 (require racket/udp)
 (require racket/match)
-(require racket/system)
-(require racket/port)
-(require racket/string)
 
 (require (planet tonyg/bitsyntax))
+
+(require "interfaces.rkt")
 
 (provide (struct-out mapping)
 	 (struct-out persistent-mapping)
@@ -34,7 +33,6 @@
 	 nat-pmp-reply-timeout
 	 nat-pmp-logger
 
-	 gateway-ip-address
 	 nat-pmp-transaction!
 	 external-ip-address
 	 map-port!
@@ -58,16 +56,6 @@
 (define nat-pmp-retry-count (make-parameter 3))
 (define nat-pmp-reply-timeout (make-parameter 1))
 (define nat-pmp-logger (make-parameter (make-logger #f #f)))
-
-(define (gateway-ip-address)
-  (define r
-    (findf
-     (lambda (r) (and (pair? r) (member (car r) '("default" "0.0.0.0"))))
-     (map string-split
-	  (string-split (with-output-to-string (lambda () (system "netstat -rn"))) "\n"))))
-  (when (not r)
-    (error 'nat-pmp "Cannot determine gateway IP address"))
-  (cadr r))
 
 (define (check-result-code! code)
   (if (zero? code)
