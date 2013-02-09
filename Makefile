@@ -18,7 +18,7 @@ manual.html: manual.scrbl
 
 clean:
 	rm -f manual.html racket.css scribble-common.js scribble-style.css scribble.css
-	rm -rf planet-docs
+	rm -rf planet-docs compiled
 	rm -f $(PLANET_NAME).plt
 
 link:
