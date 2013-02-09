@@ -41,7 +41,7 @@ All the functionality below can be accessed with a single
 
 @(defmodule/this-package main)
 
-@subsection{Getting the Gateway IP}
+@subsection{Getting information on local interfaces and gateways}
 
 NAT-PMP depends on being able to learn the IP address of the current
 default gateway. Currently, this library learns this information by
@@ -50,6 +50,24 @@ running the system utility @tt{netstat} and parsing its output.
 @defproc[(gateway-ip-address) string?]{
 Retrieves a string representation of the current gateway IP address,
 for example @racket["10.0.0.1"].}
+
+As an additional convenience, this library provides utilities for
+discovering and classifying local interface addresses.
+
+@defproc[(interface-ip-addresses) (listof string?)]{
+Retrieves a list of string representations of the IP addresses
+associated with the system's currently-active interfaces. This is done
+by running the system utility @tt{ifconfig} and parsing its output.}
+
+@defproc[(localhost-ip-address? [addr string?]) boolean?]{
+Returns @racket[#t] if and only if the argument is a local IP address
+string; that is, if it begins with the string "127.".}
+
+@defproc[(private-ip-address? [addr string?]) boolean?]{
+Returns @racket[#t] if and only if the argument is an IP address in
+one of the @link["http://tools.ietf.org/html/rfc1918"]{RFC 1918}
+"private" address ranges; that is, 10.x.y.z, 172.16.x.y through
+172.31.x.y, or 192.168.x.y.}
 
 @subsection{Timeouts}
 
