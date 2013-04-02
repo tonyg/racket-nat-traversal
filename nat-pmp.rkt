@@ -2,20 +2,20 @@
 ;; Basic NAT-PMP for opening ports on routers.
 ;; Copyright (C) 2013 Tony Garnock-Jones <tonygarnockjones@gmail.com>.
 ;;
-;; This file is part of racket-nat-pmp.
+;; This file is part of racket-nat-traversal.
 ;;
-;; racket-nat-pmp is free software: you can redistribute it and/or
-;; modify it under the terms of the GNU Affero General Public License
-;; as published by the Free Software Foundation, either version 3 of
-;; the License, or (at your option) any later version.
+;; racket-nat-traversal is free software: you can redistribute it
+;; and/or modify it under the terms of the GNU Affero General Public
+;; License as published by the Free Software Foundation, either
+;; version 3 of the License, or (at your option) any later version.
 ;;
-;; racket-nat-pmp is distributed in the hope that it will be useful,
-;; but WITHOUT ANY WARRANTY; without even the implied warranty of
-;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+;; racket-nat-traversal is distributed in the hope that it will be
+;; useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+;; of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
 ;; Affero General Public License for more details.
 ;;
 ;; You should have received a copy of the GNU Affero General Public
-;; License along with racket-nat-pmp. If not, see
+;; License along with racket-nat-traversal. If not, see
 ;; <http://www.gnu.org/licenses/>.
 
 (require racket/udp)
@@ -24,33 +24,25 @@
 (require (planet tonyg/bitsyntax))
 
 (require "interfaces.rkt")
+(require "mapping.rkt")
+(require "timer.rkt")
 
-(provide (struct-out mapping)
-	 (struct-out persistent-mapping)
-
-	 nat-pmp-port
+(provide nat-pmp-port
 	 nat-pmp-retry-count
 	 nat-pmp-reply-timeout
 	 nat-pmp-logger
 
 	 nat-pmp-transaction!
-	 external-ip-address
-	 map-port!
-	 unmap-port!
-	 unmap-all-ports!
-	 refresh-mapping!
-	 delete-mapping!
+	 nat-pmp-external-ip-address
+	 nat-pmp-map-port!
+	 nat-pmp-unmap-all-ports!
+	 nat-pmp-refresh-mapping!
+	 nat-pmp-delete-mapping!
 
-	 start-nat-change-listener!
-	 stop-nat-change-listener!
+	 start-nat-pmp-change-listener!
+	 stop-nat-pmp-change-listener!
 
-	 make-persistent-mapping
-	 stop-persistent-mapping!
-	 current-persistent-mapping
-	 refresh-persistent-mapping!)
-
-(struct mapping (protocol internal-port external-port lifetime) #:prefab)
-(struct persistent-mapping (thread) #:prefab)
+	 nat-pmp-make-persistent-mapping)
 
 (define nat-pmp-port (make-parameter 5351))
 (define nat-pmp-retry-count (make-parameter 3))
@@ -68,9 +60,6 @@
 			((5) "Unsupported opcode")
 			(else (format "Unknown result code ~v" code))))))
 
-(define (timer-evt delay-seconds)
-  (alarm-evt (+ (current-inexact-milliseconds) (* delay-seconds 1000.0))))
-
 (define (nat-pmp-transaction! s request)
   (let loop ((remaining-attempts (nat-pmp-retry-count)))
     (if (zero? remaining-attempts)
@@ -85,13 +74,19 @@
 			    (lambda (_)
 			      (loop (- remaining-attempts 1)))))))))
 
+(define (udp-close/no-error s)
+  (with-handlers ([exn:fail? void]) (udp-close s)))
+
 (define (call-with-udp-socket interface port f)
   (define s (udp-open-socket))
   (udp-bind! s interface port)
-  (call-with-values (lambda () (f s))
-    (lambda vs
-      (udp-close s)
-      (apply values vs))))
+  (with-handlers ([(lambda (e) #t) (lambda (e)
+				     (udp-close/no-error s)
+				     (raise e))])
+    (call-with-values (lambda () (f s))
+      (lambda vs
+	(udp-close/no-error s)
+	(apply values vs)))))
 
 (define (parse-address-response packet)
   (bit-string-case packet
@@ -101,12 +96,12 @@
      (check-result-code! result-code)
      (format "~a.~a.~a.~a" a b c d))))
 
-(define (external-ip-address)
+(define (nat-pmp-external-ip-address)
   (call-with-udp-socket #f 0
    (lambda (s)
      (parse-address-response (nat-pmp-transaction! s (bytes 0 0))))))
 
-(define (map-port! protocol local-port requested-port lifetime-seconds)
+(define (nat-pmp-map-port! protocol local-port requested-port lifetime-seconds)
   (call-with-udp-socket #f 0
    (lambda (s)
      (bit-string-case (nat-pmp-transaction! s
@@ -130,26 +125,27 @@
 	   (error 'nat-pmp "Unexpected reply opcode ~a for protocol ~a" opcode protocol)])
 	(check-result-code! result-code)
 	(mapping protocol
+		 #f
 		 local-port
 		 mapped-port
 		 mapped-lifetime))))))
 
 (define (unmap-port! protocol local-port)
-  (map-port! protocol local-port 0 1)
+  (nat-pmp-map-port! protocol local-port 0 1)
   (void))
 
-(define (unmap-all-ports! protocol)
+(define (nat-pmp-unmap-all-ports! protocol)
   (unmap-port! protocol 0))
 
-(define (refresh-mapping! m)
-  (match-define (mapping p l r t) m)
-  (map-port! p l r t))
+(define (nat-pmp-refresh-mapping! m)
+  (match-define (mapping p _ l r t) m)
+  (nat-pmp-map-port! p l r t))
 
-(define (delete-mapping! m)
-  (match-define (mapping p l r t) m)
+(define (nat-pmp-delete-mapping! m)
+  (match-define (mapping p _ l r t) m)
   (unmap-port! p l))
 
-(define (start-nat-change-listener!)
+(define (start-nat-pmp-change-listener!)
   (thread
    (lambda ()
      (call-with-udp-socket "224.0.0.1" 5350
@@ -177,51 +173,19 @@
 				 (log-error "NAT change listener: bad request ~v" other)
 				 (loop)]))))))))))
 
-(define (stop-nat-change-listener! t)
+(define (stop-nat-pmp-change-listener! t)
   (thread-send t 'stop))
 
-(define (make-persistent-mapping protocol
-				 local-port
-				 requested-port
-				 #:refresh-interval [refresh-interval 7200]
-				 #:on-mapping [on-mapping void])
-  (define (map!)
-    (map-port! protocol
-	       local-port
-	       requested-port
-	       (+ refresh-interval 5))) ;; a few seconds' grace
-  (persistent-mapping
-   (thread
-    (lambda ()
-      (let loop ((old-port #f) (m (map!)))
-	(if (not (equal? old-port (mapping-external-port m)))
-	    (begin (on-mapping m)
-		   (loop (mapping-external-port m) m))
-	    (sync (handle-evt (timer-evt refresh-interval)
-			      (lambda (_)
-				(loop old-port (map!))))
-		  (handle-evt (thread-receive-evt)
-			      (lambda (_)
-				(match (thread-receive)
-				  ['stop
-				   (delete-mapping! m)
-				   (void)]
-				  [(list 'current-mapping ch)
-				   (channel-put ch m)
-				   (loop old-port m)]
-				  ['refresh-now!
-				   (loop old-port (map!))]
-				  [other
-				   (log-error "Persistent mapping: bad requext: ~v" other)
-				   (loop old-port m)]))))))))))
-
-(define (stop-persistent-mapping! p)
-  (thread-send (persistent-mapping-thread p) 'stop))
-
-(define (current-persistent-mapping p)
-  (define ch (make-channel))
-  (thread-send (persistent-mapping-thread p) (list 'current-mapping ch))
-  (channel-get ch))
-
-(define (refresh-persistent-mapping! p)
-  (thread-send (persistent-mapping-thread p) 'refresh-now!))
+(define (nat-pmp-make-persistent-mapping protocol
+					 local-port
+					 requested-port
+					 #:refresh-interval [refresh-interval 3600]
+					 #:on-mapping [on-mapping void])
+  (make-persistent-mapping* nat-pmp-map-port!
+			    nat-pmp-delete-mapping!
+			    nat-pmp-external-ip-address
+			    protocol
+			    local-port
+			    requested-port
+			    #:refresh-interval refresh-interval
+			    #:on-mapping on-mapping))
