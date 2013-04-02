@@ -36,41 +36,87 @@ It provides both a low-level interface to each of the two protocols as
 well as a high-level interface that abstracts away from the details of
 the particular NAT traversal techniques available.
 
-@section{References}
-
-NAT-PMP is currently defined in an Internet-Draft.
-
-@itemize[
-  @item{@link["https://tools.ietf.org/html/draft-cheshire-nat-pmp-06"]{The NAT-PMP Internet-Draft at the time this library was written}.}
-  @item{@link["http://miniupnp.free.fr/nat-pmp.html"]{A useful quick overview of the protocol}.}
-  @item{@link["http://en.wikipedia.org/wiki/NAT_Port_Mapping_Protocol"]{NAT-PMP on Wikipedia}.}
-]
-
-UPnP is a vast expanse of entangled specification.
-
-@itemize[
-  @item{The core discovery mechanism is
-    @link["http://en.wikipedia.org/wiki/Simple_Service_Discovery_Protocol"]{SSDP}.}
-
-  @item{Everything else in UPnP is done with
-    @link["http://en.wikipedia.org/wiki/SOAP"]{SOAP} (!) over HTTP.}
-
-  @item{You can @link["http://www.upnp.org/specs/arch/"]{download} the
-    70MB (!) specification zip file from the
-    @link["http://www.upnp.org/"]{UPnP forum}. Fair warning, it's not
-    an easy read.}
-]
-
 @section{How to use the library}
 
 @(defmodule/this-package main)
 
 @subsection{The High-Level Interface}
 
+The high-level interface to the library lets you automatically manage
+NAT port mappings by simply changing calls to @racket[udp-bind!] and
+@racket[tcp-listen] to @racket[udp-bind!/public] and
+@racket[tcp-listen/public], respectively.
+
+Each socket managed by the library is associated with a
+@racket[mapping-change-listener], a background thread that tracks
+changes to the NAT configuration, keeping a set of "port assignments"
+up-to-date. A user-supplied callback (@tt{on-mapping-change}) is
+called every time the port assignment set changes.
+
+Each port assignment in a set is an address at which the corresponding
+socket is reachable. A set of port assignments includes both local
+(internal to the NAT) and public (external to the NAT) addresses.
+
+@defproc[(udp-bind!/public [udp-socket udp?]
+                           [hostname-string (or/c string? #f)]
+                           [port-no (and/c exact-nonnegative-integer?
+                                           (integer-in 0 65535))]
+                           [#:on-mapping-change on-mapping-change
+                                                (-> (set/c port-assignment?)
+                                                    any/c)
+                                                void])
+        mapping-change-listener?]{
+
+Does the work of @racket[udp-bind!], and opens and starts managing a
+UDP port mapping at the local NAT.}
+
+@defproc[(tcp-listen/public [port-no (and/c exact-nonnegative-integer?
+                                            (integer-in 0 65535))]
+                            [max-allow-wait exact-nonnegative-integer? 4]
+                            [reuse? boolean? #f]
+                            [hostname (or/c string? #f) #f]
+                            [#:on-mapping-change on-mapping-change
+                                                 (-> (set/c port-assignment?)
+                                                     any/c)
+                                                 void])
+        (values tcp-listener? mapping-change-listener?)]{
+
+Does the work of @racket[tcp-listen], and opens and starts managing a
+TCP port mapping at the local NAT.}
+
+@defstruct*[mapping-change-listener ([thread thread?]) #:prefab]{
+Handle for a mapping change listener. Useful with
+@racket[mapping-change-listener-stop!] and so forth.}
+
+@defstruct*[port-assignment ([protocol (or/c 'udp 'tcp)]
+                            [address string?]
+                            [port exact-nonnegative-integer?]
+                            [nat-traversal-technique (or/c 'nat-pmp 'upnp #f)])
+                           #:prefab]{
+
+Record of a particular name for a socket. The protocol, address, and
+port together form a name that can be used by remote peers to contact
+the socket. The @racket[port-assignment-nat-traversal-technique] field
+is @racket['nat-pmp] or @racket['upnp] for a NAT-originated name, or
+@racket[#f] for a local interface name (i.e., built from the results
+of @racket[interface-ip-addresses]).}
+
+@defproc[(mapping-change-listener-current-mappings [mcl mapping-change-listener?])
+        (set/c port-assignment?)]{
+Retrieves the current set of port assignments from the given change
+listener. May be useful instead of or in addition to using
+@tt{on-mapping-change}.}
+
+@defproc[(mapping-change-listener-stop! [mcl mapping-change-listener?]) void?]{
+Deletes any active NAT mappings, and stops the background thread
+involved in a mapping change listener. Call this while or after
+closing the associated socket.}
+
 @subsection{Getting information on local gateways and interfaces}
 
-This library provides utilities for discovering and classifying local
-interface addresses, and for discovering the local default gateway IP.
+This library provides utilities for discovering and classifying
+interface IP addresses, and for discovering the local default gateway
+IP.
 
 @defproc[(gateway-ip-address) string?]{
 Retrieves a string representation of the current default gateway IP
@@ -96,9 +142,9 @@ Returns the "best" value from the list returned by
 }
 
 @defproc[(wildcard-ip-address? [addr string?]) boolean?]{
-Returns @racket[#t] if and only if the argument is the wildcard (a.k.a
-INADDR_ANY) IP address string; that is, if it is the string
-"0.0.0.0".}
+Returns @racket[#t] if and only if the argument is the wildcard
+(a.k.a. @tt{INADDR_ANY}) IP address string; that is, if it is the
+string "0.0.0.0".}
 
 @defproc[(localhost-ip-address? [addr string?]) boolean?]{
 Returns @racket[#t] if and only if the argument is a local IP address
@@ -114,7 +160,7 @@ one of the @link["http://tools.ietf.org/html/rfc1918"]{RFC 1918}
 
 @subsubsection{Records of established mappings}
 
-@defstruct[mapping ([protocol (or/c 'udp 'tcp)]
+@defstruct*[mapping ([protocol (or/c 'udp 'tcp)]
                     [internal-address (or/c string? #f)]
                     [internal-port integer?]
                     [external-port integer?]
@@ -181,6 +227,12 @@ Refreshes a mapping by extracting its fields and calling @racket[nat-pmp-map-por
 @defproc[(nat-pmp-delete-mapping! [mapping mapping?]) void?]{
 Deletes a mapping.}
 
+@subsubsection{UPnP}
+
+@racket[(require (planet tonyg/nat-traversal/upnp-ip-gateway))]
+
+TODO
+
 @subsubsection{Managing low-level persistent mappings}
 
 @defproc[(stop-persistent-mapping! [p persistent-mapping?]) void?]{
@@ -195,5 +247,99 @@ Overrides the internal timers in the persistent mapping, causing it to
 refresh itself at its gateway right now. Normal refreshing will resume
 thereafter.}
 
-@defstruct[persistent-mapping ([thread thread?]) #:prefab]{
+@defstruct*[persistent-mapping ([thread thread?]) #:prefab]{
 Handle for a persistent mapping. Useful with @racket[stop-persistent-mapping!], etc.}
+
+@subsubsection{Calling other UPnP services}
+
+@racket[(require (planet tonyg/nat-traversal/upnp))]
+
+Routines for discovering UPnP services and calling service actions.
+
+@defparam[default-scan-time seconds exact-nonnegative-integer?]{
+Defines the number of seconds that an @racket[in-upnp-services]
+discovery scan will remain active for.}
+
+@defstruct*[(exn:fail:upnp exn:fail) ([code (or/c exact-nonnegative-integer? #f)]
+                                      [description (or/c exact-nonnegative-integer? #f)])
+        #:transparent]{
+Exception thrown upon a UPnP-related SOAP fault or failure.}
+
+@defproc[(exn:fail:upnp?/code [code exact-nonnegative-integer?])
+        (-> any/c boolean?)]{
+Returns a predicate that returns @racket[#t] if and only if its
+argument is an @racket[exn:fail:upnp?] with
+@racket[exn:fail:upnp-code] equal to @racket[code].}
+
+@defstruct*[upnp-service ([type string?]
+                         [control-url url?]
+                         [event-url url?]
+                         [scpd-url url?]) #:prefab]{
+Describes a UPnP service. The @racket[upnp-service-type] will be a URI.}
+
+@defstruct*[upnp-service-action ([name string?]
+                                [args (listof string?)]
+                                [results (listof string?)]) #:prefab]{
+Describes a particular action available on a UPnP service. The
+@racket[upnp-service-action-args] are the names of the arguments
+expected from the caller, and the @racket[upnp-service-action-results]
+are the names of the results expected to be returned from the server.}
+
+@defproc[(in-upnp-services [#:scan-time scan-time exact-nonnegative-integer? (default-scan-time)])
+        (sequenceof (case-> (-> 'descriptor upnp-service?)
+                            (-> 'actions (hash/c string? upnp-service-action?))
+                            (-> string? #:rest (listof string?) (hash/c string? string?))))]{
+Produces a sequence of service dispatchers, one for each discovered
+UPnP service on the local network. Yields each dispatcher as it is
+discovered. Continues producing values as they arrive until
+@racket[scan-time] seconds have elapsed, at which point the sequence
+ends.
+
+Each of the yielded dispatchers is a procedure taking a variable
+number of arguments:
+
+@itemize[
+  @item{If the first argument is @racket['descriptor], the underlying
+  @racket[upnp-service] is returned.}
+
+  @item{If the first argument is @racket['actions], a hashtable
+  mapping action name strings to @racket[upnp-service-action]
+  instances is returned.}
+
+  @item{Otherwise, the first argument must be a string naming an
+  action supported by the service being dispatched to. The number of
+  additional arguments must be equal to the number of arguments
+  expected by the named action, and they must all be strings. The
+  result will be a hashtable mapping result name to string result
+  value.}
+]
+}
+
+@defproc[(upnp-service-type=? [s upnp-service?] [type string?]) boolean?]{
+Returns @racket[#t] if and only if @racket[(upnp-service-type s)] is
+equal to @racket[type].}
+
+@section{References}
+
+NAT-PMP is currently defined in an Internet-Draft.
+
+@itemize[
+  @item{@link["https://tools.ietf.org/html/draft-cheshire-nat-pmp-06"]{The NAT-PMP Internet-Draft at the time this library was written}.}
+  @item{@link["http://miniupnp.free.fr/nat-pmp.html"]{A useful quick overview of the protocol}.}
+  @item{@link["http://en.wikipedia.org/wiki/NAT_Port_Mapping_Protocol"]{NAT-PMP on Wikipedia}.}
+]
+
+UPnP is a vast expanse of entangled specification.
+
+@itemize[
+  @item{The core discovery mechanism is
+    @link["http://en.wikipedia.org/wiki/Simple_Service_Discovery_Protocol"]{SSDP}.}
+
+  @item{Everything else in UPnP is done with
+    @link["http://en.wikipedia.org/wiki/SOAP"]{SOAP} (!) over HTTP.}
+
+  @item{You can @link["http://www.upnp.org/specs/arch/"]{download} the
+    70MB (!) specification zip file from the
+    @link["http://www.upnp.org/"]{UPnP forum}. Fair warning, it's not
+    an easy read.}
+]
