@@ -15,11 +15,14 @@
 (provide udp-bind!/public
 	 tcp-listen/public
 
-	 (struct-out mapping-change-listener)
-	 (struct-out port-assignment)
-
+         (rename-out [make-mapping-change-listener mapping-change-listener])
+         (rename-out [mapping-change-listener <mapping-change-listener>])
+         mapping-change-listener?
+         mapping-change-listener-thread
 	 mapping-change-listener-current-mappings
-	 mapping-change-listener-stop!)
+	 mapping-change-listener-stop!
+
+	 (struct-out port-assignment))
 
 (struct mapping-change-listener (thread) #:prefab)
 (struct port-assignment (protocol address port nat-traversal-technique) #:prefab)
