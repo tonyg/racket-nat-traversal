@@ -21,7 +21,7 @@
 (require racket/udp)
 (require racket/match)
 
-(require (planet tonyg/bitsyntax))
+(require bitsyntax)
 
 (require "interfaces.rkt")
 (require "mapping.rkt")

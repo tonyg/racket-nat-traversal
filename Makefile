@@ -1,5 +1,16 @@
-PLANET_MAJOR=1
-PLANET_MINOR=1
-PLANET_NAME=nat-traversal
-PLANET_USER=tonyg
-include Makefile.planet
+PACKAGENAME=nat-traversal
+COLLECTS=$(PACKAGENAME)
+
+all: setup
+
+clean:
+	find . -name compiled -type d | xargs rm -rf
+
+setup:
+	raco setup $(COLLECTS)
+
+link:
+	raco pkg install --link -n $(PACKAGENAME) $$(pwd)
+
+unlink:
+	raco pkg remove $(PACKAGENAME)

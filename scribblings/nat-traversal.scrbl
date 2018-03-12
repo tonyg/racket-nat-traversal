@@ -1,15 +1,11 @@
 #lang scribble/manual
 
-@(require planet/scribble
-          scribble/racket
+@(require scribble/racket
           scriblib/footnote
-          (for-label racket
-                     (this-package-in main)))
+          (for-label racket nat-traversal))
 
-@title{racket-nat-traversal}
+@title{nat-traversal}
 @author[(author+email "Tony Garnock-Jones" "tonygarnockjones@gmail.com")]
-
-@local-table-of-contents[]
 
 If you find that this library lacks some feature you need, or you have
 a suggestion for improving it, please don't hesitate to
@@ -38,7 +34,7 @@ the particular NAT traversal techniques available.
 
 @section{How to use the library}
 
-@(defmodule/this-package main)
+@(defmodule nat-traversal)
 
 @subsection{The High-Level Interface}
 
@@ -181,7 +177,7 @@ address is not known at the time of mapping (e.g. when using NAT-PMP),
 
 @subsubsection{NAT-PMP}
 
-@racket[(require (planet tonyg/nat-traversal/nat-pmp))]
+@racket[(require nat-traversal/nat-pmp)]
 
 NAT-PMP depends on being able to learn the IP address of the current
 default gateway. It does so by calling @racket[gateway-ip-address].
@@ -239,7 +235,7 @@ Deletes a mapping.}
 
 @subsubsection{UPnP}
 
-@racket[(require (planet tonyg/nat-traversal/upnp-ip-gateway))]
+@racket[(require nat-traversal/upnp-ip-gateway)]
 
 TODO
 
@@ -262,7 +258,7 @@ Handle for a persistent mapping. Useful with @racket[stop-persistent-mapping!], 
 
 @subsubsection{Calling other UPnP services}
 
-@racket[(require (planet tonyg/nat-traversal/upnp))]
+@racket[(require nat-traversal/upnp)]
 
 Routines for discovering UPnP services and calling service actions.
 
