@@ -2,6 +2,10 @@
 
 (require "../high-level.rkt")
 
+(define port (match (current-command-line-arguments)
+               [(vector s) (string->number s)]
+               [_ 5999]))
+
 (define control-channel (make-channel))
 
 (define (connection-handler cin cout)
@@ -23,7 +27,7 @@
   (pretty-print `(assignments . ,(set->list assignments))))
 
 (let-values (((listener mapping-manager)
-	      (tcp-listen/public 5999 4 #t #:on-mapping-change handle-mapping-change)))
+	      (tcp-listen/public port 4 #t #:on-mapping-change handle-mapping-change)))
   (let loop ()
     (sync (handle-evt (tcp-accept-evt listener)
 		      (match-lambda

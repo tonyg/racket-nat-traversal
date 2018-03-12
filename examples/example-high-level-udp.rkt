@@ -2,11 +2,15 @@
 
 (require "../high-level.rkt")
 
+(define port (match (current-command-line-arguments)
+               [(vector s) (string->number s)]
+               [_ 5999]))
+
 (define (handle-mapping-change assignments)
   (pretty-print `(assignments . ,(set->list assignments))))
 
 (define s (udp-open-socket))
-(define mapping-manager (udp-bind!/public s #f 5999 #:on-mapping-change handle-mapping-change))
+(define mapping-manager (udp-bind!/public s #f port #:on-mapping-change handle-mapping-change))
 
 (define buffer (make-bytes 65536))
 (let loop ()
