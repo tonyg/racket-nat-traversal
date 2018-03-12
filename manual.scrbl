@@ -82,7 +82,17 @@ UDP port mapping at the local NAT.}
         (values tcp-listener? mapping-change-listener?)]{
 
 Does the work of @racket[tcp-listen], and opens and starts managing a
-TCP port mapping at the local NAT.}
+     TCP port mapping at the local NAT.}
+
+@defproc[(mapping-change-listener [protocol (or/c 'tcp 'udp)]
+                                  [initial-local-address string?]
+                                  [local-port (integer-in 0 65535)]
+                                  [on-mapping-change (-> (set/c port-assignment?) any/c)])
+         mapping-change-listener?]{
+
+Opens and starts managing a TCP or UDP port mapping at the local NAT
+for the given port. This routine is the workhorse that both
+@racket[udp-bind!/public] and @racket[tcp-listen/public] delegate to.}
 
 @defstruct*[mapping-change-listener ([thread thread?]) #:prefab]{
 Handle for a mapping change listener. Useful with
