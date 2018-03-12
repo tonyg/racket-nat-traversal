@@ -5,7 +5,6 @@
 (require racket/system)
 (require racket/string)
 (require racket/list)
-(require (only-in srfi/13 string-prefix?))
 (require racket/function)
 
 (provide gateway-ip-address
@@ -37,7 +36,7 @@
   (equal? x "0.0.0.0"))
 
 (define (localhost-ip-address? x)
-  (string-prefix? "127." x))
+  (string-prefix? x "127."))
 
 (define (private-ip-address? x)
   (match (map string->number (string-split x "."))
