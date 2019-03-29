@@ -28,7 +28,7 @@
   (map
    (lambda (pieces)
      (car (car (filter-map (lambda (s) (regexp-match #px"\\d+.\\d+.\\d+.\\d+" s)) pieces))))
-   (filter (lambda (r) (and (pair? r) (string-ci=? (car r) "inet")))
+   (filter (lambda (r) (and (pair? r) (string-ci=? (car r) "inet6")))
 	   (map string-split
 		(string-split (with-output-to-string (lambda () (system "ifconfig"))) "\n")))))
 
