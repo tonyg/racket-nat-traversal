@@ -73,7 +73,9 @@
 (define (scan-for-gateways)
   (let/ec ignore-remainder-of-scan
     (for ([gw (in-upnp-services)]
-	  #:when (upnp-service-type=? gw "urn:schemas-upnp-org:service:WANIPConnection:1"))
+	  #:when (or (upnp-service-type=? gw "urn:schemas-upnp-org:service:WANIPConnection:1")
+                     (upnp-service-type=? gw "urn:schemas-upnp-org:service:WANPPPConnection:1")))
+      ;; (pretty-print `(found-gateway gw))
       (set! *current-ip-gateway* gw)
       (ignore-remainder-of-scan)))
   (when (not *current-ip-gateway*)
@@ -207,6 +209,7 @@
 			    #:refresh-interval refresh-interval
 			    #:on-mapping on-mapping))
 
+;; (require racket/pretty)
 ;; (require racket/trace)
 ;; (trace upnp-map-port!*)
 ;; (trace upnp-delete-mapping!)

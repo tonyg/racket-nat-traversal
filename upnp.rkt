@@ -22,9 +22,11 @@
 
 (require racket/set)
 (require racket/match)
-(require (only-in racket/list filter-map))
+(require (only-in racket/list filter-map append-map))
 (require racket/function)
 (require racket/generator)
+(require (only-in racket/port port->string))
+(require (only-in racket/string string-trim))
 
 (require xml)
 (require xml/path)
@@ -117,14 +119,29 @@
 ;;---------------------------------------------------------------------------
 ;; SOAP: Invoking services
 
+;; Strip out useless whitespace from an xexpr
+(define (clean-xexpr x)
+  (match x
+    [(? string?) (let ((s (string-trim x)))
+                   (if (equal? s "")
+                       '()
+                       (list s)))]
+    [(list* (? symbol? tag) rest)
+     (list (list* tag (append-map clean-xexpr rest)))]
+    [_ (list x)])) ;; attribute lists
+
+(define (->xexpr port)
+  (with-handlers [(exn:fail? (lambda (_e) #f))]
+    (car (clean-xexpr (xml->xexpr (document-element (read-xml port)))))))
+
 (define (http-get->xml u)
-  (xml->xexpr (document-element (read-xml (get-pure-port u)))))
+  (->xexpr (get-pure-port u)))
 
 (define (http-post->xml u headers xml-to-post)
   (define xml-bytes (string->bytes/utf-8 (string-append
 					  "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
 					  (xexpr->string xml-to-post))))
-  (xml->xexpr (document-element (read-xml (post-pure-port u xml-bytes headers)))))
+  (->xexpr (post-pure-port u xml-bytes headers)))
 
 (define (element-is? tag e)
   (and (pair? e)
@@ -152,50 +169,60 @@
 
 (define (service-wrapper s)
   (define scpd (http-get->xml (upnp-service-scpd-url s)))
-  (define actions (for/hash ([a (scpd->actions scpd)])
-		    (values (upnp-service-action-name a) a)))
-  ;; (pretty-print actions)
-  (define (upnp-service-dispatcher op . args)
-    (match op
-      ['descriptor
-       s]
-      ['actions
-       actions]
-      [(? string?)
-       (define a (hash-ref actions op (lambda () #f)))
-       (when (not a)
-	 (error 'service-wrapper "No such action: ~v" op))
-       (define action-tag (string->symbol (string-append "u:" op)))
-       (define response-tag (string->symbol (string-append "u:" op "Response")))
-       (when (not (equal? (length args) (length (upnp-service-action-args a))))
-	 (error 'service-wrapper "Invalid arguments for operation ~a; expected ~v"
-		op
-		(upnp-service-action-args a)))
-       (define response
-	 (http-post->xml (upnp-service-control-url s)
-			 (list (string-append "SOAPACTION: " (upnp-service-type s) "#" op))
-			 `(s:Envelope ((xmlns:s "http://schemas.xmlsoap.org/soap/envelope/"))
-				      (s:Body
-				       (,action-tag ((xmlns:u ,(upnp-service-type s)))
-						    ,@(map (lambda (actual formal)
-							     (list (string->symbol formal)
-								   actual))
-							   args
-							   (upnp-service-action-args a)))))))
-       ;; (pretty-print response)
-       (define body (se-path* '(s:Body) response))
-       (when (not body) (raise-upnp-error #f "Missing SOAP body in response"))
-       (cond
-	[(element-is? 's:Fault body)
-	 (define code (se-path* '(errorCode) body))
-	 (define desc (se-path* '(errorDescription) body))
-	 (raise-upnp-error (and code (string->number code)) desc)]
-	[else
-	 (for/hash ([r (se-path*/list (list response-tag) response)])
-	   (match r
-	     [(list name _ value) (values (symbol->string name) value)]
-	     [(list name _) (values (symbol->string name) "")]))])]))
-  upnp-service-dispatcher)
+  (and scpd
+       (let ()
+         (define actions (for/hash ([a (scpd->actions scpd)])
+                           (values (upnp-service-action-name a) a)))
+         ;; (pretty-print s)
+         ;; (pretty-print actions)
+         (define (upnp-service-dispatcher op . args)
+           (match op
+             ['descriptor
+              s]
+             ['actions
+              actions]
+             [(? string?)
+              (define a (hash-ref actions op (lambda () #f)))
+              (when (not a)
+                (error 'service-wrapper "No such action: ~v" op))
+              (define action-tag (string->symbol (string-append "u:" op)))
+              (define response-tag (string->symbol (string-append "u:" op "Response")))
+              (when (not (equal? (length args) (length (upnp-service-action-args a))))
+                (error 'service-wrapper "Invalid arguments for operation ~a; expected ~v"
+                       op
+                       (upnp-service-action-args a)))
+              (define request `(s:Envelope ((xmlns:s "http://schemas.xmlsoap.org/soap/envelope/")
+                                            (s:encodingStyle "http://schemas.xmlsoap.org/soap/encoding/"))
+                                           (s:Body
+                                            (,action-tag ((xmlns:u ,(upnp-service-type s)))
+                                                         ,@(map (lambda (actual formal)
+                                                                  (list (string->symbol formal)
+                                                                        actual))
+                                                                args
+                                                                (upnp-service-action-args a))))))
+              ;; (pretty-print `(REQUEST ,(upnp-service-control-url s) ,request))
+              (define response
+                (http-post->xml (upnp-service-control-url s)
+                                (list
+                                 "Content-Type: text/xml"
+                                 (string-append "SOAPACTION: " (upnp-service-type s) "#" op))
+                                request))
+              ;; (pretty-print `(RESPONSE ,response))
+              (and response
+                   (let ()
+                     (define body (se-path* '(s:Body) response))
+                     (when (not body) (raise-upnp-error #f "Missing SOAP body in response"))
+                     (cond
+                       [(element-is? 's:Fault body)
+                        (define code (se-path* '(errorCode) body))
+                        (define desc (se-path* '(errorDescription) body))
+                        (raise-upnp-error (and code (string->number code)) desc)]
+                       [else
+                        (for/hash ([r (se-path*/list (list response-tag) response)])
+                          (match r
+                            [(list name _ value) (values (symbol->string name) value)]
+                            [(list name _) (values (symbol->string name) "")]))])))]))
+         upnp-service-dispatcher)))
 
 (define (in-upnp-services #:scan-time [scan-time (default-scan-time)])
   (in-generator
@@ -208,17 +235,19 @@
 	 (set! seen (set-add seen base-url-string))
 	 (define base-url (string->url base-url-string))
 	 (define service-description (http-get->xml base-url))
+         ;; (pretty-print `(service-description ,service-description))
 	 (for ([service-xml (se-path*/list '(serviceList) service-description)]
 	       #:when (element-is? 'service service-xml))
 	   (define (extract-url path)
 	     (let ((relative-url (se-path* path service-xml)))
 	       (and relative-url (combine-url/relative base-url relative-url))))
-	   (yield
-	    (service-wrapper
-	     (upnp-service (se-path* '(serviceType) service-xml)
-			   (extract-url '(controlURL))
-			   (extract-url '(eventSubURL))
-			   (extract-url '(SCPDURL)))))))))))
+           (let ((wrapper (service-wrapper
+                           (upnp-service (se-path* '(serviceType) service-xml)
+                                         (extract-url '(controlURL))
+                                         (extract-url '(eventSubURL))
+                                         (extract-url '(SCPDURL))))))
+             (when wrapper
+               (yield wrapper)))))))))
 
 (define (upnp-service-type=? s type)
   (equal? (upnp-service-type (s 'descriptor)) type))
