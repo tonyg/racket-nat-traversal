@@ -109,9 +109,12 @@
 	     requested-port
 	     (string->number (hash-ref result "NewLeaseDuration")))))
 
+(define (best-interface-ip-address-for gw)
+  (best-interface-ip-address #:peer-ip (upnp-service-ip (gw 'descriptor))))
+
 (define (upnp-map-port!* protocol local-port requested-port lifetime-seconds
 			 #:gateway [gw (current-ip-gateway)]
-			 #:local-address [local-address (best-interface-ip-address)]
+			 #:local-address [local-address (best-interface-ip-address-for gw)]
 			 #:description [description ""])
   (when (not (zero? lifetime-seconds))
     (log-warning "upnp-map-port!*: Non-zero (non-infinite) lifetime-seconds is not recommended"))
@@ -143,7 +146,7 @@
 ;; one actually granted by the server.
 (define (upnp-map-port! protocol local-port requested-port lifetime-seconds
 			#:gateway [gw (current-ip-gateway)]
-			#:local-address [local-address (best-interface-ip-address)]
+			#:local-address [local-address (best-interface-ip-address-for gw)]
 			#:description [description ""])
   ;; See http://en.wikipedia.org/wiki/Ephemeral_port
   (define (random-port) (+ 1025 (random (- 65536 1025))))
@@ -193,13 +196,15 @@
 				      #:refresh-interval [refresh-interval 3600]
 				      #:on-mapping [on-mapping void]
 				      #:gateway-proc [gw-proc current-ip-gateway]
-				      #:local-address [local-address (best-interface-ip-address)]
+				      #:local-address [local-address #f]
 				      #:description [description ""])
   (make-persistent-mapping* (lambda (p l r t)
+                              (define gw (gw-proc))
 			      (upnp-map-port! p l r
 					      0 ;; unilaterally decide to ignore lifetime
-					      #:gateway (gw-proc)
-					      #:local-address local-address
+					      #:gateway gw
+					      #:local-address (or local-address
+                                                                  (best-interface-ip-address-for gw))
 					      #:description description))
 			    (lambda (m) (upnp-delete-mapping! m #:gateway (gw-proc)))
 			    (lambda () (upnp-external-ip-address #:gateway (gw-proc)))

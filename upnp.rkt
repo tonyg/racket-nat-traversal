@@ -31,6 +31,7 @@
 (require xml)
 (require xml/path)
 (require net/url)
+(require net/dns)
 
 (require (only-in web-server/http/request read-headers))
 (require web-server/http/request-structs)
@@ -53,7 +54,7 @@
 (struct exn:fail:upnp exn:fail (code description) #:transparent)
 
 (struct upnp-discovery-response (packet host port) #:prefab)
-(struct upnp-service (type control-url event-url scpd-url) #:prefab)
+(struct upnp-service (type control-url event-url scpd-url ip) #:prefab)
 (struct upnp-service-action (name args results) #:prefab)
 
 (define (exn:fail:upnp?/code code)
@@ -173,7 +174,7 @@
        (let ()
          (define actions (for/hash ([a (scpd->actions scpd)])
                            (values (upnp-service-action-name a) a)))
-         ;; (pretty-print s)
+         ;; (println s)
          ;; (pretty-print actions)
          (define (upnp-service-dispatcher op . args)
            (match op
@@ -229,6 +230,7 @@
    (define seen (set))
    (for ([record (in-upnp-discovery #:scan-time scan-time)])
      (define location (get-header "location" record))
+     (define service-ip (dns-get-address (dns-find-nameserver) (upnp-discovery-response-host record)))
      (when location
        (define base-url-string (bytes->string/latin-1 (header-value location)))
        (when (not (set-member? seen base-url-string))
@@ -245,7 +247,8 @@
                            (upnp-service (se-path* '(serviceType) service-xml)
                                          (extract-url '(controlURL))
                                          (extract-url '(eventSubURL))
-                                         (extract-url '(SCPDURL))))))
+                                         (extract-url '(SCPDURL))
+                                         service-ip))))
              (when wrapper
                (yield wrapper)))))))))
 
