@@ -19,7 +19,13 @@
     (findf
      (lambda (r) (and (pair? r) (member (car r) '("default" "0.0.0.0"))))
      (map string-split
-	  (string-split (with-output-to-string (lambda () (system "netstat -rn"))) "\n"))))
+	  (string-split
+           (with-output-to-string
+             (lambda ()
+               (if (file-exists? "/usr/sbin/netstat")
+                   (system "/usr/sbin/netstat -rn") ; if it's where we expect, call it directly
+                   (system "netstat -rn"))))       ; if not, hope that it's in the user's path
+           "\n"))))
   (when (not r)
     (error 'gateway-ip-address "Cannot determine gateway IP address"))
   (cadr r))
