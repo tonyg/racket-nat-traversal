@@ -10,5 +10,6 @@
 (define repositories '("4.x"))
 (define scribblings '(("scribblings/nat-traversal.scrbl" ())))
 
-(define deps '("base" "bitsyntax" "web-server-lib"))
+(define deps '("net-lib"
+               "base" "bitsyntax" "web-server-lib"))
 (define build-deps '("racket-doc" "scribble-lib"))
