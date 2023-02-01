@@ -76,7 +76,7 @@
     (for ([gw (in-upnp-services)]
 	  #:when (or (upnp-service-type=? gw "urn:schemas-upnp-org:service:WANIPConnection:1")
                      (upnp-service-type=? gw "urn:schemas-upnp-org:service:WANPPPConnection:1")))
-      ;; (pretty-print `(found-gateway gw))
+      ;; (pretty-print `(found-gateway ,gw))
       (set! *current-ip-gateway* gw)
       (ignore-remainder-of-scan)))
   (when (not *current-ip-gateway*)
