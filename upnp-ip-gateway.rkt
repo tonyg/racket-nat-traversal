@@ -24,6 +24,7 @@
 (require "timer.rkt")
 
 (require racket/match)
+(require racket/exn)
 
 (provide current-ip-gateway
 	 gateway-rescan-interval
@@ -56,7 +57,7 @@
 (define *gateway-scanner* #f)
 
 (define (log-crashed-gateway e)
-  (log-error "UPnP gateway scanner died with exn: ~a" (exn-message e)))
+  (log-error "UPnP gateway scanner died with exn: ~a" (exn->string e)))
 
 (define (start-upnp-gateway-scanner!)
   (when (not *gateway-scanner*)
