@@ -241,21 +241,24 @@
        (when (not (set-member? seen base-url-string))
 	 (set! seen (set-add seen base-url-string))
 	 (define base-url (string->url base-url-string))
-	 (define service-description (http-get->xml base-url))
+	 (define service-description
+           (with-handlers ((exn:fail? (lambda (e) #f)))
+             (http-get->xml base-url)))
          ;; (pretty-print `(service-description ,service-description))
-	 (for ([service-xml (se-path*/list '(serviceList) service-description)]
-	       #:when (element-is? 'service service-xml))
-	   (define (extract-url path)
-	     (let ((relative-url (se-path* path service-xml)))
-	       (and relative-url (combine-url/relative base-url relative-url))))
-           (let ((wrapper (service-wrapper
-                           (upnp-service (se-path* '(serviceType) service-xml)
-                                         (extract-url '(controlURL))
-                                         (extract-url '(eventSubURL))
-                                         (extract-url '(SCPDURL))
-                                         service-ip))))
-             (when wrapper
-               (yield wrapper)))))))))
+         (when service-description
+           (for ([service-xml (se-path*/list '(serviceList) service-description)]
+                 #:when (element-is? 'service service-xml))
+             (define (extract-url path)
+               (let ((relative-url (se-path* path service-xml)))
+                 (and relative-url (combine-url/relative base-url relative-url))))
+             (let ((wrapper (service-wrapper
+                             (upnp-service (se-path* '(serviceType) service-xml)
+                                           (extract-url '(controlURL))
+                                           (extract-url '(eventSubURL))
+                                           (extract-url '(SCPDURL))
+                                           service-ip))))
+               (when wrapper
+                 (yield wrapper))))))))))
 
 (define (upnp-service-type=? s type)
   (equal? (upnp-service-type (s 'descriptor)) type))
