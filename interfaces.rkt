@@ -10,6 +10,7 @@
 (provide gateway-ip-address
 	 interface-ip-addresses
 	 best-interface-ip-address
+         ip-address?
 	 wildcard-ip-address?
 	 localhost-ip-address?
 	 private-ip-address?)
@@ -27,24 +28,29 @@
 (define (interface-ip-addresses)
   (map
    (lambda (pieces)
-     (car (car (filter-map (lambda (s) (regexp-match #px"\\d+.\\d+.\\d+.\\d+" s)) pieces))))
+     (car (car (filter-map (lambda (s) (regexp-match #px"\\d+\\.\\d+\\.\\d+\\.\\d+" s)) pieces))))
    (filter (lambda (r) (and (pair? r) (string-ci=? (car r) "inet")))
 	   (map string-split
 		(string-split (with-output-to-string (lambda () (system "ifconfig"))) "\n")))))
+
+(define (ip-address? x)
+  (and (string? x)
+       (regexp-match? #px"^\\d+\\.\\d+\\.\\d+\\.\\d+$" x)))
 
 (define (wildcard-ip-address? x)
   (equal? x "0.0.0.0"))
 
 (define (localhost-ip-address? x)
-  (string-prefix? x "127."))
+  (and (ip-address? x) (string-prefix? x "127.")))
 
 (define (private-ip-address? x)
-  (match (map string->number (string-split x "."))
-    [(list 10 _ _ _) #t]
-    [(list 172 n _ _) (and (>= n 16) (< n 32))]
-    [(list 192 168 _ _) #t]
-    [(list 100 n _ _) (and (>= n 64) (< n 128))] ;; CGNAT, Carrier Grade NAT, RFC 6598
-    [_ #f]))
+  (and (ip-address? x)
+       (match (map string->number (string-split x "."))
+         [(list 10 _ _ _) #t]
+         [(list 172 n _ _) (and (>= n 16) (< n 32))]
+         [(list 192 168 _ _) #t]
+         [(list 100 n _ _) (and (>= n 64) (< n 128))] ;; CGNAT, Carrier Grade NAT, RFC 6598
+         [_ #f])))
 
 (define (binary-byte s)
   (local-require (only-in racket/format ~r))
