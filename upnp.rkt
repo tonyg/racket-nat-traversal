@@ -36,6 +36,8 @@
 (require (only-in web-server/http/request read-headers))
 (require web-server/http/request-structs)
 
+(require (only-in "interfaces.rkt" ip-address?))
+
 (provide default-scan-time
 
 	 (struct-out exn:fail:upnp)
@@ -230,7 +232,10 @@
    (define seen (set))
    (for ([record (in-upnp-discovery #:scan-time scan-time)])
      (define location (get-header "location" record))
-     (define service-ip (dns-get-address (dns-find-nameserver) (upnp-discovery-response-host record)))
+     (define service-ip (let ((host (upnp-discovery-response-host record)))
+                          (if (ip-address? host)
+                              host
+                              (dns-get-address (dns-find-nameserver) host))))
      (when location
        (define base-url-string (bytes->string/latin-1 (header-value location)))
        (when (not (set-member? seen base-url-string))
